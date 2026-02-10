@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel 数据清洗工具 - Prototype</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+</head>
+
+<body>
+    <header class="app-header">
+        <div class="logo">
+            <i data-lucide="filter"></i>
+            <span>数据清洗工具 <small>beta</small></span>
+        </div>
+        <div class="header-actions">
+            <div class="view-mode-switcher header-view-switcher">
+                <button class="view-mode-btn active" data-mode="vertical" title="上下分屏">
+                    <i data-lucide="rows-2"></i>
+                </button>
+                <button class="view-mode-btn" data-mode="horizontal" title="左右分屏">
+                    <i data-lucide="columns-2"></i>
+                </button>
+            </div>
+            <button class="btn btn-outline-danger" id="clear-all-btn" title="清空所有配置和结果">
+                <i data-lucide="trash-2"></i> 清空
+            </button>
+            <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv, .pdf" style="display: none;">
+            <button class="btn btn-secondary" onclick="document.getElementById('excel-upload').click()">
+                <i data-lucide="file-up"></i> 打开
+            </button>
+            <button class="btn btn-secondary">
+                <i data-lucide="folder-open"></i> 加载配置
+            </button>
+            <button class="btn btn-primary"><i data-lucide="save"></i> 保存配置</button>
+            <button class="btn btn-outline" id="sidebar-toggle"><i data-lucide="panel-right-open"></i></button>
+        </div>
+    </header>
+
+    <main class="app-content">
+        <!-- 分屏容器 -->
+        <div class="split-container" id="split-container" data-layout="vertical">
+            <!-- 源数据区域 -->
+            <section class="workspace source-panel" id="source-panel">
+                <div class="panel-toolbar">
+                    <span class="toolbar-title"><i data-lucide="file-spreadsheet"></i> 源数据</span>
+                </div>
+                <div class="spreadsheet-container" id="spreadsheet">
+                    <div class="empty-state" onclick="document.getElementById('excel-upload').click()">
+                        <i data-lucide="file-spreadsheet" class="empty-icon"></i>
+                        <p>打开 xlsx 或 pdf 文件</p>
+                    </div>
+                </div>
+                <!-- PDF 预览容器 (默认隐藏) -->
+                <div id="pdf-container" class="pdf-viewer" style="display: none;">
+                    <div class="pdf-controls">
+                        <button class="btn btn-icon-sm" id="pdf-prev"><i data-lucide="chevron-left"></i></button>
+                        <span id="pdf-page-num">1</span> / <span id="pdf-page-count">0</span>
+                        <button class="btn btn-icon-sm" id="pdf-next"><i data-lucide="chevron-right"></i></button>
+                    </div>
+                    <div id="pdf-render-area"></div>
+                </div>
+                <!-- Sheet 页签移至底部 -->
+                <div class="workspace-footer">
+                    <div class="tab-group" id="sheet-tabs"></div>
+                </div>
+            </section>
+
+            <!-- 可拖拽分隔条 -->
+            <div class="split-divider" id="split-divider">
+                <div class="divider-handle"></div>
+            </div>
+
+            <!-- 清洗结果区域 -->
+            <section class="preview-panel" id="preview-panel">
+                <div class="panel-toolbar">
+                    <span class="toolbar-title"><i data-lucide="table"></i> 清洗结果</span>
+                    <div class="toolbar-actions">
+                        <button class="btn btn-primary btn-sm" id="run-btn">
+                            <i data-lucide="play"></i> 执行清洗并预览
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="preview-export-btn">
+                            <i data-lucide="download"></i> 导出 Excel
+                        </button>
+                    </div>
+                </div>
+                <div class="preview-table-wrapper" id="preview-wrapper">
+                    <div id="preview-skeleton" class="preview-skeleton">
+                        <div class="skeleton-header"></div>
+                        <div class="skeleton-row"></div>
+                        <div class="skeleton-row"></div>
+                        <div class="skeleton-row"></div>
+                        <p class="skeleton-hint">点击「执行清洗并预览」生成清洗结果</p>
+                    </div>
+                    <table id="preview-table" style="display: none;">
+                        <thead>
+                            <!-- JS 生成 -->
+                        </thead>
+                        <tbody>
+                            <!-- JS 生成 -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- 右侧清洗配置面板 -->
+        <aside class="config-panel">
+            <div class="panel-header">
+                <h3>清洗规则配置</h3>
+                <span class="badge">Draft</span>
+            </div>
+
+            <div class="config-sections">
+                <!-- Step 1: 表格区域 (多区域支持) -->
+                <div id="region-config-container"></div>
+
+                <!-- Step 2: 表格合并 (Standalone Panel) -->
+                <div id="join-panel-container"></div>
+
+                <!-- Step 3: 清洗规则 (Custom Rules) -->
+                <div id="rules-panel-container"></div>
+
+                <!-- Step 3.5: 数据校验规则库 -->
+                <div id="validation-panel-container"></div>
+
+                <!-- Step 4: 字段清洗策略 -->
+                <div class="config-item">
+                    <div class="config-item-header">
+                        <i data-lucide="database"></i>
+                        <span>字段清洗</span>
+                        <button class="btn-icon-sm" id="refresh-fields" title="刷新字段列表" style="margin-left: auto;">
+                            <i data-lucide="refresh-cw"></i>
+                        </button>
+                        <i data-lucide="chevron-down" class="chevron" style="margin-left: 0;"></i>
+                    </div>
+                    <div class="config-item-body">
+                        <div class="strategy-list" id="field-cleaning-list">
+                            <!-- 动态加载选中的表头映射 -->
+                            <p class="hint">配置表头映射与清洗规则</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            </div>
+        </aside>
+    </main>
+
+    <!-- 全屏编辑模式 Modal -->
+    <div id="fullscreen-editor" class="fullscreen-overlay" style="display: none;">
+        <div class="fullscreen-content">
+            <header class="fullscreen-header">
+                <div class="fullscreen-title">
+                    <i data-lucide="table"></i>
+                    <h3>全屏数据编辑器</h3>
+                </div>
+                <div class="fullscreen-toolbar">
+                    <button class="btn btn-secondary" id="fullscreen-search-btn">
+                        <i data-lucide="search"></i> 搜索
+                    </button>
+                    <button class="btn btn-secondary" id="fullscreen-filter-btn">
+                        <i data-lucide="filter"></i> 筛选
+                    </button>
+                    <div class="divider-vertical"></div>
+                    <button class="btn btn-secondary" id="fullscreen-export-btn">
+                        <i data-lucide="download"></i> 导出
+                    </button>
+                    <button class="btn btn-icon" id="fullscreen-close-btn" title="退出全屏">
+                        <i data-lucide="minimize"></i>
+                    </button>
+                </div>
+            </header>
+            <div class="fullscreen-body" id="fullscreen-body">
+                <!-- 表格内容将移动到这里 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Join Configuration Modal -->
+    <div id="join-setup-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content large-modal">
+            <header class="modal-header">
+                <h3><i data-lucide="link"></i> 水平合并配置</h3>
+                <button class="btn-icon" id="join-modal-close"><i data-lucide="x"></i></button>
+            </header>
+
+            <div class="modal-body join-config-body">
+                <!-- 1. Master Table Section -->
+                <div class="join-master-row">
+                    <label class="section-label">主表区域</label>
+                    <select id="join-master-select">
+                        <!-- Options populated dynamically -->
+                    </select>
+                </div>
+
+                <!-- 2. Slave Tables List -->
+                <div class="join-section slaves-list-section">
+                    <div id="slave-tables-container" class="slave-tables-container">
+                        <!-- Dynamic Slave Cards and Add Button will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <footer class="modal-footer">
+                <button class="btn btn-secondary" id="join-modal-cancel">取消</button>
+                <button class="btn btn-primary" id="join-modal-save">应用配置</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Rule Editor Modal -->
+    <div id="rule-editor-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content large-modal">
+            <header class="modal-header">
+                <h3><i data-lucide="code-2"></i> 自定义清洗规则</h3>
+                <button class="btn-icon" id="rule-modal-close"><i data-lucide="x"></i></button>
+            </header>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>规则名称</label>
+                    <input type="text" id="rule-name-input" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label>清洗逻辑 (JavaScript)</label>
+                    <div class="code-editor-wrapper">
+                        <div class="code-header">function(value, row) {</div>
+                        <textarea id="rule-code-input" spellcheck="false"
+                            placeholder="// 在此处编写您的清洗逻辑\nreturn value;"></textarea>
+                        <div class="code-footer">}</div>
+                    </div>
+                    <p class="hint">支持 value (当前值) 和 row (当前行对象) 参数</p>
+                </div>
+            </div>
+            <footer class="modal-footer">
+                <button class="btn btn-secondary" id="rule-modal-cancel">取消</button>
+                <button class="btn btn-primary" id="rule-modal-save">保存规则</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Validation Rule Editor Modal -->
+    <div id="validation-editor-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content large-modal">
+            <header class="modal-header">
+                <h3><i data-lucide="shield-check"></i> 校验规则设置</h3>
+                <button class="btn-icon" id="validation-modal-close"><i data-lucide="x"></i></button>
+            </header>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>规则名称</label>
+                    <input type="text" id="validation-name-input">
+                </div>
+
+                <div class="form-group">
+                    <div class="mode-switcher" id="validation-mode-switcher">
+                        <button class="mode-btn active" data-mode="config">表达式模式</button>
+                        <button class="mode-btn" data-mode="script">脚本模式</button>
+                    </div>
+                </div>
+
+                <!-- Expression Mode UI -->
+                <div id="validation-config-ui">
+                    <div class="form-group">
+                        <label>表达式构建</label>
+                        <div id="expression-display" class="expression-display">
+                            <!-- Tokens will be inserted here -->
+                            <p class="hint" style="margin: auto; color: #94a3b8;">请通过下方按钮选择字段和运算符构建校验表达式</p>
+                        </div>
+                        <button class="btn-clear" id="expression-clear">清空表达式</button>
+                    </div>
+
+                    <div class="builder-grids">
+                        <div class="builder-column operations-area">
+                            <div class="op-row">
+                                <div class="op-section">
+                                    <label class="form-label">基础符号</label>
+                                    <div class="symbol-grid" id="builder-symbols">
+                                        <button class="symbol-btn" data-token-type="op">(</button>
+                                        <button class="symbol-btn" data-token-type="op">)</button>
+                                        <button class="symbol-btn" data-token-type="op">+</button>
+                                        <button class="symbol-btn" data-token-type="op">-</button>
+                                        <button class="symbol-btn" data-token-type="op">*</button>
+                                        <button class="symbol-btn" data-token-type="op">/</button>
+                                    </div>
+                                </div>
+                                <div class="op-section">
+                                    <label class="form-label">逻辑判断</label>
+                                    <div class="symbol-grid" id="builder-logic">
+                                        <button class="symbol-btn" data-token-type="logic">=</button>
+                                        <button class="symbol-btn" data-token-type="logic">!=</button>
+                                        <button class="symbol-btn" data-token-type="logic">&gt;</button>
+                                        <button class="symbol-btn" data-token-type="logic">&lt;</button>
+                                        <button class="symbol-btn" data-token-type="logic">&ge;</button>
+                                        <button class="symbol-btn" data-token-type="logic">&le;</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="op-section" style="margin-top: 15px;">
+                                <label class="form-label">当前项 / 常量</label>
+                                <div class="constants-stack">
+                                    <button class="symbol-btn rect-btn item-current" id="insert-current-value">
+                                        <i data-lucide="crosshair"></i>
+                                        <span>插入当前项 (Value)</span>
+                                    </button>
+                                    <button class="symbol-btn rect-btn item-constant" id="insert-constant">
+                                        <i data-lucide="hash"></i>
+                                        <span>插入常量值</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="builder-column flex-1">
+                            <label class="form-label">表格字段</label>
+                            <div class="field-list-wrapper">
+                                <div class="field-search-box">
+                                    <i data-lucide="search"></i>
+                                    <input type="text" id="field-search-input" placeholder="搜索字段...">
+                                </div>
+                                <div id="validation-fields-list" class="field-list scroll-shadow">
+                                    <!-- JS populated fields -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Script Mode UI -->
+                <div id="validation-script-ui" style="display: none;">
+                    <div class="form-group">
+                        <label>校验逻辑 (JavaScript)</label>
+                        <div class="code-editor-wrapper">
+                            <div class="code-header">function(value, row) {</div>
+                            <textarea id="validation-code-input" spellcheck="false"
+                                placeholder="return value === row.price * row.count;"></textarea>
+                            <div class="code-footer">}</div>
+                        </div>
+                        <p class="hint">返回 true 表示通过，返回 false 或 错误消息字符串 表示失败</p>
+                    </div>
+                </div>
+            </div>
+            <footer class="modal-footer">
+                <button class="btn btn-secondary" id="validation-modal-cancel">取消</button>
+                <button class="btn btn-primary" id="validation-modal-save">保存</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- New Modular Architecture -->
+    <script type="module" src="./js/main.js"></script>
+    <!-- <script src="app.js"></script> -->
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+
+</html>
