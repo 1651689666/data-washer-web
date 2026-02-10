@@ -3,7 +3,13 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - main  # 监听 main 分支的推送
+      - main
+  workflow_dispatch: # 允许手动执行
+
+# 确保同一时间只有一个部署任务运行，防止资源冲突
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -21,7 +27,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "npm"
           cache-dependency-path: prototype/package-lock.json
 
       - name: Install Dependencies
