@@ -1,9 +1,8 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-    // GitHub Pages 基础路径配置
-    // 如果你的仓库名是 data-washer，则设为 /data-washer/
-    base: './',
+    // 核心修复：GitHub Pages 在二级目录下运行，必须指定仓库名作为基础路径
+    base: '/data-washer-web/',
     build: {
         outDir: 'dist',
         assetsDir: 'assets',
